@@ -1,0 +1,84 @@
+server:
+  port: 8080
+
+spring:
+  application:
+    name: signal-server
+  data:
+    redis:
+      host: localhost
+      port: 6379
+      password: ''
+      timeout: 10000ms
+      lettuce:
+        pool:
+          max-active: 20
+          max-idle: 10
+          min-idle: 0
+          max-wait: -1ms
+      database: 1
+  datasource:
+    type: com.zaxxer.hikari.HikariDataSource
+    hikari:
+      # 最大连接池数量
+      maximum-pool-size: 20
+      # 最小空闲线程数量
+      minimum-idle: 10
+      # 配置获取连接等待超时的时间
+      connectionTimeout: 30000
+      # 校验超时时间
+      validationTimeout: 5000
+      # 空闲连接存活最大时间，默认10分钟
+      idleTimeout: 600000
+      # 此属性控制池中连接的最长生命周期，值0表示无限生命周期，默认30分钟
+      maxLifetime: 1800000
+      # 连接测试query（配置检测连接是否有效）
+      connectionTestQuery: SELECT 1
+      # 多久检查一次连接的活性
+      keepaliveTime: 30000
+
+mybatis-flex:
+  mapper-locations: classpath*:mapper/*.xml
+  datasource:
+    ds1:
+      type: ${spring.datasource.type}
+      driver-class-name: org.postgresql.Driver
+      url: jdbc:postgresql://127.0.0.1:5432/your_db?useUnicode=true&charaterEncoding=utf-8&allowMultiQueries=true
+      username: postgres
+      password: admin_123
+
+app:
+  jwt:
+    secret: '*Ab124911'
+    expire-minutes: 1440
+  signaling:
+    node-url: ws://127.0.0.1:7000
+    # 与 Node 桥接服务通信超时（毫秒）
+    request-timeout: 15000
+    # Protoo 连接参数（可用环境变量覆盖）
+    protoo-url: ${PROTOO_URL:}
+    protoo-origin: ${PROTOO_ORIGIN:}
+    protoo-protocol: ${PROTOO_PROTOCOL:}
+    protoo-host: ${PROTOO_HOST:}
+    protoo-port: ${PROTOO_PORT:}
+    # 临时绕过自签/过期证书校验（排障用，正式环境建议关闭）
+    protoo-insecure: ${PROTOO_INSECURE:true}
+
+
+
+aliyun:
+
+  nls:
+    access-key-id: ${ALIYUN_NLS_ACCESS_KEY_ID:}
+    access-key-secret: ${ALIYUN_NLS_ACCESS_KEY_SECRET:}
+    app-key: ${ALIYUN_NLS_APP_KEY:}
+    endpoint: ${ALIYUN_NLS_ENDPOINT:}
+    ws-url: ${ALIYUN_NLS_WS_URL:}
+
+# 豆包 (火山引擎) 配置
+volcengine:
+  doubao:
+    api-key: ${VOLCENGINE_API_KEY:}
+    endpoint-id: ${VOLCENGINE_ENDPOINT_ID:}
+    url: https://ark.cn-beijing.volces.com/api/v3/chat/completions
+

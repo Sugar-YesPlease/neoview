@@ -1,0 +1,22 @@
+{
+  "name": "mediasoup-ui",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "@jitsi/rnnoise-wasm": "^0.2.1",
+    "axios": "^1.6.8",
+    "mediasoup-client": "^3.7.15",
+    "vue": "^3.4.21"
+  },
+
+  "devDependencies": {
+    "@vitejs/plugin-vue": "^5.0.4",
+    "vite": "^5.1.4"
+  }
+}

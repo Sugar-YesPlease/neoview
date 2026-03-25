@@ -1,0 +1,83 @@
+@font-face {
+  font-family: "iconfont"; /* Project id 5135108 */
+  src: url('iconfont.woff2?t=1773022085309') format('woff2'),
+       url('iconfont.woff?t=1773022085309') format('woff'),
+       url('iconfont.ttf?t=1773022085309') format('truetype');
+}
+
+.iconfont {
+  font-family: "iconfont" !important;
+  font-size: 16px;
+  font-style: normal;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+.icon-gerenyonghutouxiang:before {
+  content: "\e7e4";
+}
+
+.icon-touxiang:before {
+  content: "\e655";
+}
+
+.icon-biaoqing:before {
+  content: "\e644";
+}
+
+.icon-14guaduan-1:before {
+  content: "\e67e";
+}
+
+.icon-morentouxiang:before {
+  content: "\e616";
+}
+
+.icon-guaduan:before {
+  content: "\e602";
+}
+
+.icon-biaoqing-xue:before {
+  content: "\e632";
+}
+
+.icon-pingmugongxiang:before {
+  content: "\e746";
+}
+
+.icon-zhudongjiangzao:before {
+  content: "\e634";
+}
+
+.icon-shexiangtou:before {
+  content: "\e605";
+}
+
+.icon-guanbishexiangtou:before {
+  content: "\e620";
+}
+
+.icon-w_pingmu:before {
+  content: "\e66e";
+}
+
+.icon-a-10jiangzao:before {
+  content: "\e60b";
+}
+
+.icon-mti-guaduan:before {
+  content: "\e9da";
+}
+
+.icon-mic_on:before {
+  content: "\e699";
+}
+
+.icon-mic_off:before {
+  content: "\e69a";
+}
+
+.icon-jiangzao:before {
+  content: "\e698";
+}
+

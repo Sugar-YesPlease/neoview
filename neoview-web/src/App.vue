@@ -242,6 +242,9 @@
 			:meeting-duration="meetingDuration"
 			@share-stalled="handleShareStalled"
 
+			:recording-status="recordingStatus"
+			:recording-duration="recordingDuration"
+			:recording-error="recordingError"
 
 			:transcription-lines="transcriptionLines"
 			:active-reactions="activeReactions"
@@ -252,6 +255,7 @@
 			@set-avatar-type="setAvatarType"
 			@toggle-screen-share="toggleScreenShare"
 			@resume-audio="resumeRemoteAudio"
+			@toggle-recording="toggleRecording"
 
 			@leave="leaveCall"
 			@clear-transcription="clearTranscriptionLines"
@@ -270,6 +274,7 @@ import MeetingRoom from './components/MeetingRoom.vue';
 import { login, register, createMeeting } from './services/api';
 import { MediasoupSession } from './services/mediasoupSession';
 import { AsrStreamer } from './services/asrStreamer';
+import { RecordingService } from './services/recordingService';
 import rnnoiseWasmUrl from '@jitsi/rnnoise-wasm/dist/rnnoise.wasm?url';
 
 
@@ -377,6 +382,13 @@ let avatarController = null;
 let faceMeshLoaderPromise = null;
 let faceMeshBaseUrl = '';
 let rnnoiseModulePromise = null;
+
+// ─── 录屏相关状态 ───
+/** @type {RecordingService | null} */
+let recordingService = null;
+const recordingStatus = ref('idle'); // 'idle' | 'requesting' | 'recording' | 'stopping' | 'saving'
+const recordingDuration = ref('00:00:00');
+const recordingError = ref('');
 
 
 
@@ -2006,6 +2018,92 @@ async function toggleScreenShare() {
 	await startScreenShare();
 }
 
+// ─────────────────────────────────────────────
+//  录屏功能
+// ─────────────────────────────────────────────
+
+/**
+ * 开始录屏
+ * @param {object} options
+ * @param {boolean} [options.includeMic=true]   是否同时录制麦克风
+ */
+async function startRecording({ includeMic = true } = {}) {
+	if (!callActive.value) return;
+	if (recordingStatus.value !== 'idle') {
+		console.warn('[App] 录制已在进行中');
+		return;
+	}
+
+	recordingError.value = '';
+
+	if (!recordingService) {
+		recordingService = new RecordingService();
+
+		recordingService.onStatusChange = (status) => {
+			recordingStatus.value = status;
+			console.log('[App] 录制状态变更:', status);
+		};
+
+		recordingService.onDurationUpdate = (durationStr) => {
+			recordingDuration.value = durationStr;
+		};
+
+		recordingService.onError = (msg) => {
+			recordingError.value = msg;
+			console.error('[App] 录制错误:', msg);
+			// 3 秒后自动清除错误提示
+			setTimeout(() => { recordingError.value = ''; }, 3000);
+		};
+
+		recordingService.onSaved = (filename) => {
+			console.log('[App] 录制文件已保存:', filename);
+		};
+	}
+
+	await recordingService.start({
+		includeMic,
+		// 复用项目已有的麦克风流（如果麦克风已开启），避免重复弹权限
+		existingMicStream: micEnabled.value ? micStream.value : null,
+		videoBitsPerSecond: 3_000_000,
+		audioBitsPerSecond: 128_000,
+	});
+}
+
+/**
+ * 停止录屏并保存
+ */
+function stopRecording() {
+	if (!recordingService || recordingStatus.value !== 'recording') return;
+	recordingDuration.value = '00:00:00';
+	recordingService.stop();
+}
+
+/**
+ * 切换录屏（开始/停止）
+ */
+async function toggleRecording() {
+	if (recordingStatus.value === 'recording') {
+		stopRecording();
+	} else if (recordingStatus.value === 'idle') {
+		await startRecording({ includeMic: true });
+	}
+}
+
+/**
+ * 清理录制服务（退出会议时调用）
+ */
+function cleanupRecording() {
+	if (recordingService) {
+		if (recordingStatus.value === 'recording') {
+			recordingService.cancel();
+		}
+		recordingService = null;
+	}
+	recordingStatus.value = 'idle';
+	recordingDuration.value = '00:00:00';
+	recordingError.value = '';
+}
+
 function restartAsr() {
 
 	stopAsr();
@@ -2092,6 +2190,7 @@ function logout() {
 	cleanupRawCamStream();
 	cleanupAvatarController();
 	stopScreenShare({ silent: true });
+	cleanupRecording();
 	localStorage.clear();
 
 

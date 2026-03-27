@@ -1,26 +1,49 @@
 <template>
 	<div class="meeting-room">
-		<header class="meeting-header">
-			<div class="header-left">
-				<div class="logo">
-					<svg width="24" height="24" viewBox="0 0 32 32" fill="none">
-						<rect width="32" height="32" rx="8" fill="#3B82F6"/>
-						<path d="M16 8L24 16L16 24L8 16L16 8Z" fill="white"/>
-					</svg>
-					<span class="logo-text">NeoView</span>
-				</div>
-				<div class="meeting-info">
-					<span class="meeting-id">会议 ID: {{ roomId }}</span>
-					<span class="divider">|</span>
-					<span class="duration">⏱ {{ meetingDuration }}</span>
-					<span class="divider">|</span>
-					<span class="participants">👥 {{ participantCount }} 人</span>
-				</div>
+	<header class="meeting-header">
+		<div class="header-left">
+			<div class="logo">
+				<svg width="24" height="24" viewBox="0 0 32 32" fill="none">
+					<rect width="32" height="32" rx="8" fill="#3B82F6"/>
+					<path d="M16 8L24 16L16 24L8 16L16 8Z" fill="white"/>
+				</svg>
+				<span class="logo-text">NeoView</span>
 			</div>
-			<!-- <div class="header-right">
-				<button class="leave-btn" @click="$emit('leave')">离开会议</button>
-			</div> -->
-		</header>
+			<div class="meeting-info">
+				<span class="meeting-id">会议 ID: {{ roomId }}</span>
+				<span class="divider">|</span>
+				<span class="duration">⏱ {{ meetingDuration }}</span>
+				<span class="divider">|</span>
+				<span class="participants">👥 {{ participantCount }} 人</span>
+				<!-- 录制状态指示器 -->
+				<template v-if="recordingStatus !== 'idle'">
+					<span class="divider">|</span>
+					<span
+						class="recording-badge"
+						:class="{
+							'recording-badge--active': recordingStatus === 'recording',
+							'recording-badge--loading': recordingStatus === 'requesting' || recordingStatus === 'stopping' || recordingStatus === 'saving',
+						}"
+					>
+						<span v-if="recordingStatus === 'recording'" class="rec-dot"></span>
+						<span v-if="recordingStatus === 'recording'">REC {{ recordingDuration }}</span>
+						<span v-else-if="recordingStatus === 'requesting'">⏳ 等待录制权限...</span>
+						<span v-else-if="recordingStatus === 'stopping'">⏳ 停止中...</span>
+						<span v-else-if="recordingStatus === 'saving'">💾 保存录制文件...</span>
+					</span>
+				</template>
+			</div>
+		</div>
+		<!-- 录制错误提示 -->
+		<transition name="fade">
+			<div v-if="recordingError" class="recording-error-toast">
+				⚠️ {{ recordingError }}
+			</div>
+		</transition>
+		<!-- <div class="header-right">
+			<button class="leave-btn" @click="$emit('leave')">离开会议</button>
+		</div> -->
+	</header>
 
 		<div class="meeting-content">
 			<div class="video-area" :class="{ 'compact-mode': screenShareActive, 'grid-mode': gridLayout.isGridMode }">
@@ -270,19 +293,42 @@
 					</span>
 					<!-- <span class="btn-text">虚拟头像</span> -->
 				</button>
-				<button
-					class="control-btn secondary"
-					:class="{ active: screenShareActive && !screenShareDisabled }"
-					:disabled="screenShareDisabled"
-					@click="$emit('toggle-screen-share')"
-					:title="screenShareActive ? (screenShareDisabled ? '共享中' : '停止共享') : '共享屏幕'"
-				>
-					<span class="btn-icon" aria-hidden="true">
-						<i class="iconfont icon-w_pingmu"></i>
-					</span>
-					<!-- <span class="btn-text">{{ screenShareActive ? (screenShareDisabled ? '共享中' : '停止共享') : '共享屏幕' }}</span> -->
-				</button>
-				<div class="reaction-wrap">
+			<button
+				class="control-btn secondary"
+				:class="{ active: screenShareActive && !screenShareDisabled }"
+				:disabled="screenShareDisabled"
+				@click="$emit('toggle-screen-share')"
+				:title="screenShareActive ? (screenShareDisabled ? '共享中' : '停止共享') : '共享屏幕'"
+			>
+				<span class="btn-icon" aria-hidden="true">
+					<i class="iconfont icon-w_pingmu"></i>
+				</span>
+				<!-- <span class="btn-text">{{ screenShareActive ? (screenShareDisabled ? '共享中' : '停止共享') : '共享屏幕' }}</span> -->
+			</button>
+
+			<!-- 录屏按钮 -->
+			<button
+				class="control-btn record-btn"
+				:class="{
+					'record-active': recordingStatus === 'recording',
+					'record-loading': recordingStatus === 'requesting' || recordingStatus === 'stopping' || recordingStatus === 'saving',
+				}"
+				:disabled="recordingStatus === 'requesting' || recordingStatus === 'stopping' || recordingStatus === 'saving'"
+				@click="$emit('toggle-recording')"
+				:title="recordingStatus === 'recording' ? `停止录制 (${recordingDuration})` : recordingStatus !== 'idle' ? '录制处理中...' : '开始录屏'"
+			>
+				<span class="btn-icon" aria-hidden="true">
+					<!-- 录制中：停止图标 -->
+					<span v-if="recordingStatus === 'recording'" class="record-stop-icon"></span>
+					<!-- 处理中：旋转动画 -->
+					<span v-else-if="recordingStatus !== 'idle'" class="record-spin-icon"></span>
+					<!-- 空闲：录制图标 -->
+					<span v-else class="record-dot-icon"></span>
+				</span>
+				<span v-if="recordingStatus === 'recording'" class="record-duration-text">{{ recordingDuration }}</span>
+			</button>
+
+			<div class="reaction-wrap">
 					<button class="control-btn utility-btn" :class="{ active: showReactionPicker }" @click="toggleReactionPicker"
 						title="表情"
 					>
@@ -344,9 +390,13 @@ const props = defineProps({
 	meetingDuration: { type: String, default: '00:00:00' },
 	transcriptionLines: { type: Array, default: () => [] },
 	activeReactions: { type: Object, default: () => ({}) },
+	// 录屏相关 props
+	recordingStatus: { type: String, default: 'idle' },  // 'idle' | 'requesting' | 'recording' | 'stopping' | 'saving'
+	recordingDuration: { type: String, default: '00:00:00' },
+	recordingError: { type: String, default: '' },
 });
 
-const emit = defineEmits(['toggle-mic', 'toggle-cam', 'toggle-ai-denoise', 'toggle-virtual-avatar', 'set-avatar-type', 'toggle-screen-share', 'resume-audio', 'share-stalled', 'leave', 'clear-transcription', 'send-reaction']);
+const emit = defineEmits(['toggle-mic', 'toggle-cam', 'toggle-ai-denoise', 'toggle-virtual-avatar', 'set-avatar-type', 'toggle-screen-share', 'resume-audio', 'share-stalled', 'leave', 'clear-transcription', 'send-reaction', 'toggle-recording']);
 
 const activeShareDisplayName = ref('');        //当前正在共享屏幕的人员
 const localVideoElement = ref(null);
@@ -722,6 +772,7 @@ onBeforeUnmount(() => {
 	border-bottom: 1px solid rgba(232, 234, 237, 0.12);
 	min-height: 56px;
 	flex-shrink: 0;
+	position: relative;
 }
 
 
@@ -1417,5 +1468,144 @@ onBeforeUnmount(() => {
 	.btn-text {
 		display: none;
 	}
+}
+
+/* ─── 录制状态徽标 ─── */
+.recording-badge {
+	display: inline-flex;
+	align-items: center;
+	gap: 5px;
+	padding: 2px 8px;
+	border-radius: 999px;
+	font-size: 12px;
+	font-weight: 600;
+	white-space: nowrap;
+}
+
+.recording-badge--active {
+	background: rgba(239, 68, 68, 0.18);
+	color: #fca5a5;
+	border: 1px solid rgba(239, 68, 68, 0.4);
+}
+
+.recording-badge--loading {
+	background: rgba(251, 191, 36, 0.14);
+	color: #fcd34d;
+	border: 1px solid rgba(251, 191, 36, 0.3);
+}
+
+/* 录制中红色闪烁圆点 */
+.rec-dot {
+	display: inline-block;
+	width: 7px;
+	height: 7px;
+	border-radius: 50%;
+	background: #ef4444;
+	animation: rec-blink 1s step-start infinite;
+	flex-shrink: 0;
+}
+
+@keyframes rec-blink {
+	0%, 100% { opacity: 1; }
+	50% { opacity: 0.2; }
+}
+
+/* ─── 录制按钮 ─── */
+.control-btn.record-btn {
+	min-width: 50px;
+	position: relative;
+	gap: 2px;
+}
+
+/* 录制中：红色高亮 */
+.control-btn.record-btn.record-active {
+	background: rgba(239, 68, 68, 0.2);
+	border-color: rgba(239, 68, 68, 0.6);
+	min-width: 84px;
+}
+
+.control-btn.record-btn.record-active:hover {
+	background: rgba(239, 68, 68, 0.32);
+	border-color: rgba(239, 68, 68, 0.8);
+}
+
+/* 处理中：禁用态 */
+.control-btn.record-btn.record-loading {
+	opacity: 0.65;
+}
+
+/* 空闲状态：实心红色圆形图标 */
+.record-dot-icon {
+	display: inline-block;
+	width: 14px;
+	height: 14px;
+	border-radius: 50%;
+	background: #ef4444;
+	box-shadow: 0 0 6px rgba(239, 68, 68, 0.6);
+}
+
+/* 录制中停止图标：闪烁方块 */
+.record-stop-icon {
+	display: inline-block;
+	width: 12px;
+	height: 12px;
+	border-radius: 2px;
+	background: #ef4444;
+	animation: rec-blink 1s step-start infinite;
+}
+
+/* 旋转加载图标 */
+.record-spin-icon {
+	display: inline-block;
+	width: 14px;
+	height: 14px;
+	border: 2px solid rgba(232, 234, 237, 0.3);
+	border-top-color: #e8eaed;
+	border-radius: 50%;
+	animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin {
+	to { transform: rotate(360deg); }
+}
+
+/* 录制时长文字 */
+.record-duration-text {
+	font-size: 10px;
+	font-weight: 700;
+	color: #fca5a5;
+	line-height: 1;
+	letter-spacing: 0.5px;
+	white-space: nowrap;
+}
+
+/* ─── 录制错误 Toast ─── */
+.recording-error-toast {
+	position: absolute;
+	top: 62px;
+	left: 50%;
+	transform: translateX(-50%);
+	background: rgba(220, 38, 38, 0.92);
+	color: #fff;
+	padding: 8px 18px;
+	border-radius: 999px;
+	font-size: 13px;
+	font-weight: 500;
+	white-space: nowrap;
+	z-index: 10;
+	box-shadow: 0 4px 14px rgba(0, 0, 0, 0.3);
+	backdrop-filter: blur(6px);
+	pointer-events: none;
+}
+
+/* 淡入淡出动画 */
+.fade-enter-active,
+.fade-leave-active {
+	transition: opacity 0.3s ease, transform 0.3s ease;
+}
+.fade-enter-from,
+.fade-leave-to {
+	opacity: 0;
+	transform: translateX(-50%) translateY(-6px);
 }
 </style>

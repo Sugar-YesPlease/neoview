@@ -375,6 +375,8 @@ let rawCamStream = null;
 let rawScreenShareStream = null;
 let screenShareConsumerId = '';
 let screenShareProducerId = '';
+// 记录本会话内已确认关闭的屏幕共享 producerId，防止重连时闪现
+const closedScreenShareProducerIds = new Set();
 let denoiseController = null;
 
 
@@ -477,7 +479,7 @@ function updateStatus(state) {
 
 	if (state?.type === 'consumer') {
 
-		const { consumer, stream, peerId, displayName, appData } = state;
+		const { consumer, stream, peerId, displayName, appData, initiallyPaused } = state;
 		const source = appData?.source || (consumer.kind === 'audio' ? 'audio' : 'video');
 		console.log('[App] 收到新的 consumer:', {
 			kind: consumer.kind,
@@ -486,6 +488,7 @@ function updateStatus(state) {
 			peerId: peerId || 'unknown',
 			displayName: displayName || 'unknown',
 			source,
+			initiallyPaused: !!initiallyPaused,
 		});
 
 		if (consumer.kind === 'audio') {
@@ -513,6 +516,21 @@ function updateStatus(state) {
 			// 检查 track 是否有效：如果 track 已经 ended，直接忽略
 			if (!shareTrack || shareTrack.readyState === 'ended') {
 				console.warn('[Share] 收到已失效的屏幕共享 consumer，忽略');
+				return;
+			}
+			
+			// 【防御1】如果服务端标记该 consumer 为 paused，说明对应的屏幕共享 producer
+			// 已经关闭或暂停（比如：共享者已停止共享后，新用户加入时仍会收到此 consumer）
+			// track.readyState 此时可能仍是 'live'，但媒体数据实际已停止，不应显示
+			if (initiallyPaused) {
+				console.warn('[Share] 收到初始状态为 paused 的屏幕共享 consumer，忽略（共享已结束）');
+				return;
+			}
+
+			// 【防御2】如果该 producerId 在本会话内已经被确认关闭过，直接忽略
+			// 防止因网络延迟、reconnect 等原因收到已关闭 producer 的 newConsumer
+			if (consumer.producerId && closedScreenShareProducerIds.has(consumer.producerId)) {
+				console.warn('[Share] 收到已关闭的屏幕共享 producer 的 consumer，忽略:', consumer.producerId);
 				return;
 			}
 			
@@ -1944,6 +1962,10 @@ function clearScreenShareState(options = {}) {
 
 	const { showNotice = false, noticeText = '共享已结束' } = options;
 	console.log('[Share] 清理共享状态');
+	// 记录已关闭的 producerId，防止重连后收到相同 producer 的 newConsumer 时误激活
+	if (screenShareProducerId) {
+		closedScreenShareProducerIds.add(screenShareProducerId);
+	}
 	screenShareStream.value = null;
 	screenShareOwner.value = { peerId: '', displayName: '' };
 	screenShareActive.value = false;
@@ -2176,20 +2198,21 @@ function setAuth(data) {
 	setTimeout(() => { statusText.value = ''; }, 2000);
 }
 
-function logout() {
+async function logout() {
 	// 先停止 ASR，再清空引用
 	if (asrStreamer) {
 		asrStreamer.stop();
 		asrStreamer = null;
 	}
-	if (session) {
-		session.close();
-	}
 	cleanupDenoise();
 	cleanupRawMicStream();
 	cleanupRawCamStream();
 	cleanupAvatarController();
-	stopScreenShare({ silent: true });
+	// 【关键修复】先 await stopScreenShare，确保 closeProducer 信令发出后再 close session
+	await stopScreenShare({ silent: true });
+	if (session) {
+		session.close();
+	}
 	cleanupRecording();
 	localStorage.clear();
 
@@ -2470,7 +2493,7 @@ function sendReaction(emoji) {
 	session.sendReaction?.(emoji);
 }
 
-function leaveCall(options = {}) {
+async function leaveCall(options = {}) {
 	const { keepStatusText = false } = options;
 
 	console.log('[App] 离开会议');
@@ -2485,12 +2508,14 @@ function leaveCall(options = {}) {
 	cleanupRawMicStream();
 	cleanupRawCamStream();
 	cleanupAvatarController();
-	stopScreenShare({ silent: true });
+
+	// 【关键修复】必须先 await stopScreenShare，确保 closeProducer 信令已发送给服务端
+	// 再关闭 session，否则 session.close() 会立即断开连接，导致 closeProducer 请求丢失
+	// 服务端未收到 closeProducer，producer 仍然存活，下次用户重新加入会议时
+	// mediasoup-demo 会重新发 newConsumer 给该用户，导致屏幕共享画面闪现
+	await stopScreenShare({ silent: true });
+
 	if (session) {
-
-
-
-
 		session.close();
 		session = null;
 	}

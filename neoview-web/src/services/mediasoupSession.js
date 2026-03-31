@@ -162,6 +162,13 @@ export class MediasoupSession {
 
 	async disableMic() {
 		if (this.micProducer) {
+			try {
+				await this.signaling.request('closeProducer', {
+					producerId: this.micProducer.id,
+				});
+			} catch (error) {
+				console.warn('[mediasoup] 关闭 mic producer 通知失败:', error?.message || error);
+			}
 			this.micProducer.close();
 			this.micProducer = null;
 		}
@@ -196,6 +203,13 @@ export class MediasoupSession {
 
 	async disableCam() {
 		if (this.camProducer) {
+			try {
+				await this.signaling.request('closeProducer', {
+					producerId: this.camProducer.id,
+				});
+			} catch (error) {
+				console.warn('[mediasoup] 关闭 cam producer 通知失败:', error?.message || error);
+			}
 			this.camProducer.close();
 			this.camProducer = null;
 		}
@@ -215,6 +229,16 @@ export class MediasoupSession {
 
 	async disableScreenShare() {
 		if (this.shareProducer) {
+			// 【关键修复】先通知服务端关闭 producer，再关闭本地对象
+			// 否则服务端不知道 producer 已关闭，会继续向其他 peers 发送 newConsumer
+			try {
+				await this.signaling.request('closeProducer', {
+					producerId: this.shareProducer.id,
+				});
+				console.log('[mediasoup] 已通知服务端关闭屏幕共享 producer:', this.shareProducer.id);
+			} catch (error) {
+				console.warn('[mediasoup] 关闭 producer 通知失败:', error?.message || error);
+			}
 			this.shareProducer.close();
 			this.shareProducer = null;
 		}
@@ -227,37 +251,42 @@ export class MediasoupSession {
 			console.log('[mediasoup] server request', request.method, request.id, request.data);
 			if (request.method === 'newConsumer') {
 				const data = request.data;
-				console.log('[mediasoup] newConsumer 数据:', {
-					consumerId: data.consumerId,
-					producerId: data.producerId,
-					kind: data.kind,
-					peerId: data.peerId,
-					appData: data.appData,
-				});
-				
-				const consumer = await this.recvTransport.consume({
-					id: data.consumerId,
-					producerId: data.producerId,
-					kind: data.kind,
-					rtpParameters: data.rtpParameters,
-					appData: data.appData,
-				});
+			console.log('[mediasoup] newConsumer 数据:', {
+				consumerId: data.consumerId,
+				producerId: data.producerId,
+				kind: data.kind,
+				peerId: data.peerId,
+				appData: data.appData,
+				paused: data.paused,
+			});
+			
+			const consumer = await this.recvTransport.consume({
+				id: data.consumerId,
+				producerId: data.producerId,
+				kind: data.kind,
+				rtpParameters: data.rtpParameters,
+				appData: data.appData,
+			});
 
-				this.remoteConsumers.set(consumer.id, consumer);
+			this.remoteConsumers.set(consumer.id, consumer);
 
-				consumer.track.enabled = true;
-				const stream = new MediaStream();
-				stream.addTrack(consumer.track);
+			consumer.track.enabled = true;
+			const stream = new MediaStream();
+			stream.addTrack(consumer.track);
 
-				this.signaling.respond(request.id, true, {});
-				
-				// 提取用户信息（优先级：data.peerId > appData.peerId > producerId）
-				const peerId = data.peerId || data.appData?.peerId || data.producerId;
-				const displayName = data.displayName || data.appData?.displayName || peerId;
-				
-				console.log('[mediasoup] 提取用户信息:', { peerId, displayName });
-				
-				this.remoteConsumerMeta.set(consumer.id, { peerId, displayName });
+			this.signaling.respond(request.id, true, {});
+			
+			// 提取用户信息（优先级：data.peerId > appData.peerId > producerId）
+			const peerId = data.peerId || data.appData?.peerId || data.producerId;
+			const displayName = data.displayName || data.appData?.displayName || peerId;
+			
+			console.log('[mediasoup] 提取用户信息:', { peerId, displayName });
+			
+			this.remoteConsumerMeta.set(consumer.id, { peerId, displayName });
+			
+			// 如果服务端标记该 consumer 为 paused，说明对应 producer 当前处于暂停状态
+			// 保存此状态，透传给上层，避免上层误以为共享正在进行
+			const initiallyPaused = !!data.paused;
 				
 				// 监听 track 事件（兜底处理暂停/恢复，避免远端卡帧）
 				const emitPaused = () => {
@@ -289,15 +318,17 @@ export class MediasoupSession {
 					emitResumed();
 				};
 				
-				// 传递 peerId 和 displayName 以便前端显示
-				this.onState?.({ 
-					type: 'consumer', 
-					consumer, 
-					stream,
-					peerId: peerId,
-					displayName: displayName,
-					appData: data.appData,
-				});
+			// 传递 peerId 和 displayName 以便前端显示
+			// initiallyPaused：服务端标记该 consumer 初始状态为 paused（producer 当前已暂停/关闭）
+			this.onState?.({ 
+				type: 'consumer', 
+				consumer, 
+				stream,
+				peerId: peerId,
+				displayName: displayName,
+				appData: data.appData,
+				initiallyPaused,
+			});
 
 
 				return;
